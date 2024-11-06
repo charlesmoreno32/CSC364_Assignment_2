@@ -1,0 +1,224 @@
+#!/usr/bin/env python3
+
+import socket
+import sys
+import traceback
+from threading import Thread
+import struct
+import select
+import tty
+import termios
+import time
+
+LOGIN_REQUEST = 0
+LOGOUT_REQUEST = 1
+JOIN_REQUEST = 2
+LEAVE_REQUEST = 3
+SAY_REQUEST = 4
+LIST_REQUEST = 5
+WHO_REQUEST = 6
+ALIVE_REQUEST = 7
+
+SAY = 0
+LIST = 1
+WHO = 2
+ERROR = 3
+
+
+last_time = time.time()
+inp = ""
+user = ""
+
+# Create a message with a specified type and data (remember to encrypt w/ utf-8 before sending)
+def send_message(soc, server_address, message_type, data=b''):
+    message = struct.pack('!I', message_type) + data
+    soc.sendto(message, server_address)
+
+def handle_server(received_packet):
+    global inp, user
+    sys.stdout.write('\b' * len(inp))
+    sys.stdout.flush()
+
+    # Determine the type of message received
+    message_type = struct.unpack('!I', received_packet[:4])[0]
+    data = received_packet[4:]
+
+    sys.stdout.write('\b' * len(inp))
+    sys.stdout.flush()
+    
+    if message_type == SAY:
+        channel = data[:32].decode('utf-8').rstrip('\0')
+        username = data[32:64].decode('utf-8').rstrip('\0')
+        message = data[64:128].decode('utf-8').rstrip('\0')
+        print(f"[{channel}][{username}]: {message}")
+
+    elif message_type == LIST:
+        count = int(struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0'))
+        print("Existing channels:")
+        offset = 32
+        for _ in range(count):
+            channel = struct.unpack('!32s', data[offset:offset + 32])[0].decode('utf-8').rstrip('\0')
+            offset += 32
+            if channel:
+                print(f"- {channel}")
+
+    elif message_type == WHO:
+        count = int(struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0'))
+        channel = struct.unpack('!32s', data[32:64])[0].decode('utf-8').rstrip('\0')
+        print(f"{count} users on channel {channel}:")
+        offset = 64
+        for _ in range(count):
+            user = struct.unpack('!32s', data[offset:offset + 32])[0].decode('utf-8')
+            offset += 32
+            if user:
+                print(f"- {user}")
+
+    elif message_type == ERROR:
+        message = data[:64].decode('utf-8').rstrip('\0')
+        print(message)
+        if(message in ["User logged out.",  "Error: Username already taken. Please reconnect with different."]):
+            return 1
+
+    sys.stdout.write(f"{inp}")
+    sys.stdout.flush()
+    return 0
+
+def keep_alive(conn, addr):
+    global last_time
+    while True:
+        time.sleep(60)
+        current_time = time.time()
+        if(current_time - last_time > 60):
+            send_message(conn, addr, ALIVE_REQUEST)
+
+def main():
+    global inp, last_time, user
+    argc = len(sys.argv)
+    if(argc == 4):
+        host = sys.argv[1]
+        port = int(sys.argv[2])
+        user = sys.argv[3]
+        addr = (host, port)
+    else:
+        print("Error. Proper usage: ./client [host] [port] [username]\n")
+        return 1
+    
+
+    soc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    old_settings = termios.tcgetattr(sys.stdin.fileno())
+
+    # Initally connect to Common
+    curr_channel = "Common"
+    channels_lst = ["Common"]
+    username_enc = struct.pack('!32s', user.ljust(32, '\0').encode('utf-8'))
+    channel_enc =  struct.pack('!32s', "Common".ljust(32, '\0').encode('utf-8'))
+    if(len(user) > 32 or len(user) <= 0):
+        print(f"Error: invalid username, must be between 1 to 32 bytes: {user}")
+        print("Exiting...")
+        return 1
+
+    send_message(soc, addr, LOGIN_REQUEST, username_enc)
+    send_message(soc, addr, JOIN_REQUEST, channel_enc)
+
+    try:
+        client_thread = Thread(target=keep_alive, args=(soc, addr))
+        client_thread.start()
+    except:
+        print("Thread did not start.")
+        traceback.print_exc()
+
+    try:
+        tty.setcbreak(sys.stdin.fileno())
+        while True:
+            # Use select to wait for input on both the socket and stdin
+            read_sockets, _, _ = select.select([sys.stdin, soc], [], [])
+            for sock in read_sockets:
+                if sock == soc:
+                    received_packet, addr = sock.recvfrom(1024)
+                    if not received_packet:
+                        print("Disconnected from server")
+                        return
+                    
+                    feedback = handle_server(received_packet)
+                    if(feedback == 1):
+                        print("Exiting...")
+                        exit(1)
+
+                elif sock == sys.stdin:
+                    char = sys.stdin.read(1)
+                    last_time = time.time()
+                    if char:
+                        if(char == '\x7f'):
+                            if len(inp) > 0:
+                                inp = inp[:-1]
+                                sys.stdout.write('\b\b')
+                                sys.stdout.flush()
+                        elif(char == '\n'):
+                            if(inp != "" and inp[0] == '/'):
+                                line = inp.split()
+                                command = line[0]
+                                if(len(line) > 1):
+                                    channel = line[1].ljust(32, '\0').encode('utf-8')
+                                    channel_enc =  struct.pack('!32s', channel)
+
+                                if command.lower() == "/exit":
+                                    send_message(soc, addr, LOGOUT_REQUEST)
+                                    print("Exiting...")
+                                    return
+                                elif command.lower() == "/join":
+                                    if(line[1] not in channels_lst):
+                                        if( 0 < len(line[1]) <= 32):
+                                            curr_channel = line[1]
+                                            channels_lst.append(line[1])
+                                            send_message(soc, addr, JOIN_REQUEST, channel_enc)
+                                        else:
+                                            print(f"Error: improper cahannel name size (1-32 bytes): {line[1]}")
+                                    else:
+                                        print(f"Error: user already in channel {line[1]}")
+                                elif command.lower() == "/leave":
+                                    if(line[1] in channels_lst):
+                                        if( 0 < len(line[1]) <= 32):
+                                            send_message(soc, addr, LEAVE_REQUEST, channel_enc)
+                                            channels_lst.remove(line[1])
+                                            if(curr_channel == line[1]):
+                                                curr_channel = ""
+                                        else:
+                                            print(f"Error: improper cahannel name size (1-32 bytes): {line[1]}")
+                                    else:
+                                        print(f"Error: user not part of channel {line[1]}")
+                                elif command.lower() == "/list":
+                                    send_message(soc, addr, LIST_REQUEST)
+                                elif command.lower() == "/who":
+                                    send_message(soc, addr, WHO_REQUEST, channel_enc)
+                                elif command.lower() == "/switch":
+                                    if(line[1] in channels_lst):
+                                        if( 0 < len(line[1]) <= 32):
+                                            curr_channel = line[1]
+                                        else:
+                                            print(f"Error: improper cahannel name size (1-32 bytes): {line[1]}")
+                                    else:
+                                        print(f"Error: user not part of channel {line[1]}")
+                                else:
+                                    print("Error: improper command")
+                            else:
+                                if(curr_channel == ""):
+                                    print("Error: user is not a part of any active channel")
+                                else:
+                                    if(0 < len(inp) < 65):
+                                        channel_enc =  struct.pack('!32s', curr_channel.ljust(32, '\0').encode('utf-8'))
+                                        inp_enc = struct.pack('!64s', inp.ljust(64, '\0').encode('utf-8'))
+                                        send_message(soc, addr, SAY_REQUEST, channel_enc + inp_enc)
+                                    else:
+                                        print("Error: message must be between 1 to 64 characters long, inclusive")
+                            sys.stdout.write('\n')
+                            sys.stdout.flush()
+                            inp = ""
+                        else:
+                            inp += char
+                            sys.stdout.write(char)
+                            sys.stdout.flush()
+    finally:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
+if __name__ == "__main__":
+    main()
