@@ -165,7 +165,6 @@ def main():
 
                 elif sock == sys.stdin:
                     char = sys.stdin.read(1)
-                    last_time = time.time()
                     if char:
                         if(char == '\x7f'):
                             if len(inp) > 0:
@@ -173,6 +172,7 @@ def main():
                                 sys.stdout.write('\b\b')
                                 sys.stdout.flush()
                         elif(char == '\n'):
+                            last_time = time.time()
                             if(inp != "" and inp[0] == '/'):
                                 line = inp.split()
                                 command = line[0]
