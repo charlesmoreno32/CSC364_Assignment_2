@@ -160,7 +160,6 @@ def main():
                     
                     feedback = handle_server(received_packet)
                     if(feedback == 1):
-                        print("Exiting...")
                         exit(1)
 
                 elif sock == sys.stdin:
@@ -237,6 +236,9 @@ def main():
                             sys.stdout.write(char)
                             sys.stdout.flush()
     finally:
-        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
+        try:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
+        except ValueError:
+            print("Client input malfunctioned. Please reconnect. Username may no longer be available.")
 if __name__ == "__main__":
     main()

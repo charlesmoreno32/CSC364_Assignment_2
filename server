@@ -218,9 +218,11 @@ def handle_client(conn, received_packet, addr):
             print("Received malformed packet.")
             return
     elif(message_type == ALIVE_REQUEST):
-        addr_to_username[addr][1] = time.time()
-        print(f"{addr} sent a keep alive request.")
-
+        try:
+            addr_to_username[addr][1] = time.time()
+            print(f"{addr} sent a keep alive request.")
+        except KeyError:
+            send_message(conn, addr, ERROR, "Error: User not logged in.".ljust(64, '\0').encode('utf-8'))
 
 def main():
     argc = len(sys.argv)
