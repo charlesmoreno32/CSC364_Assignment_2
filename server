@@ -63,23 +63,29 @@ def handle_client(conn, received_packet, addr):
     if not received_packet:
         return
 
-    message = received_packet.decode('utf-8')
-    print(f"Received from {addr}: {message}")
+    try:
+        message = received_packet.decode('utf-8')
+        print(f"Received from {addr}: {message}")
 
-    # Find out what type of message it is and deal with it correspondingly
-    message_type = struct.unpack('!I', received_packet[:4])[0]
+        message_type = struct.unpack('!I', received_packet[:4])[0]
+    except:
+            print("Received malformed packet.")
+            return
 
     if message_type == LOGIN_REQUEST:
-        data = received_packet[4:]
-        username = struct.unpack('!32s', data[:32])[0].decode('utf-8')
-        if username not in users:
-            users[username] = []
-            addr_to_username[addr] = [username, time.time()]
-            username_to_addr[username] = addr
-            print(f"User {username} logged in")
-        else:
-            send_message(conn, addr, ERROR, "Error: Username already taken. Please reconnect with different.".ljust(64, '\0').encode('utf-8'))
-
+        try:
+            data = received_packet[4:]
+            username = struct.unpack('!32s', data[:32])[0].decode('utf-8')
+            if username not in users:
+                users[username] = []
+                addr_to_username[addr] = [username, time.time()]
+                username_to_addr[username] = addr
+                print(f"User {username} logged in")
+            else:
+                send_message(conn, addr, ERROR, "Error: Username already taken. Please reconnect with different.".ljust(64, '\0').encode('utf-8'))
+        except:
+            print("Received malformed packet.")
+            return
     elif(message_type == LOGOUT_REQUEST):
         try:
             username = addr_to_username.get(addr, None)[0]
@@ -96,10 +102,13 @@ def handle_client(conn, received_packet, addr):
                 send_message(conn, addr, ERROR, "User logged out.".ljust(64, '\0').encode('utf-8'))
         except KeyError:
                 send_message(conn, addr, ERROR, "Error: User not logged in.".ljust(64, '\0').encode('utf-8'))
+        except:
+            print("Received malformed packet.")
+            return
     elif(message_type == JOIN_REQUEST):
-        data = received_packet[4:]
-        channel = struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0')
         try:
+            data = received_packet[4:]
+            channel = struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0')
             username = addr_to_username[addr][0]
             addr_to_username[addr][1] = time.time()
 
@@ -115,10 +124,13 @@ def handle_client(conn, received_packet, addr):
                 send_message(conn, addr, ERROR, "Error: User already part of channel.".ljust(64, '\0').encode('utf-8'))
         except KeyError:
                 send_message(conn, addr, ERROR, "Error: User not logged in.".ljust(64, '\0').encode('utf-8'))
+        except:
+            print("Received malformed packet.")
+            return
 
     elif(message_type == LEAVE_REQUEST):
-        data = received_packet[4:]
         try:
+            data = received_packet[4:]
             username = addr_to_username[addr][0]
             addr_to_username[addr][1] = time.time()
 
@@ -134,11 +146,14 @@ def handle_client(conn, received_packet, addr):
                 send_message(conn, addr, ERROR, f"Error: User {username} is not a part of channel {channel}.".ljust(64, '\0').encode('utf-8'))
         except KeyError:
                 send_message(conn, addr, ERROR, "Error: User not logged in.".ljust(64, '\0').encode('utf-8'))
+        except:
+            print("Received malformed packet.")
+            return
     elif(message_type == SAY_REQUEST):
-        data = received_packet[4:]
-        channel = struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0')
-        message = struct.unpack('!64s', data[32:96])[0].decode('utf-8').rstrip('\0')
         try:
+            data = received_packet[4:]
+            channel = struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0')
+            message = struct.unpack('!64s', data[32:96])[0].decode('utf-8').rstrip('\0')
             username = addr_to_username[addr][0]
             addr_to_username[addr][1] = time.time()
             if username in users and channel in users[username]:
@@ -152,9 +167,12 @@ def handle_client(conn, received_packet, addr):
                 send_message(conn, addr, ERROR, f"Error: User {username} is not a part of channel {channel}.".ljust(64, '\0').encode('utf-8'))
         except KeyError:
                 send_message(conn, addr, ERROR, "Error: User not logged in.".ljust(64, '\0').encode('utf-8'))
+        except:
+            print("Received malformed packet.")
+            return
     elif(message_type == LIST_REQUEST):
-        data = received_packet[4:]
         try:
+            data = received_packet[4:]
             username = addr_to_username[addr][0]
             addr_to_username[addr][1] = time.time()
 
@@ -170,11 +188,13 @@ def handle_client(conn, received_packet, addr):
             send_message(conn, addr, LIST, list_channels)
         except KeyError:
                 send_message(conn, addr, ERROR, "Error: User not logged in.".ljust(64, '\0').encode('utf-8'))
-
+        except:
+            print("Received malformed packet.")
+            return
     elif(message_type == WHO_REQUEST):
-        data = received_packet[4:]
-        channel = struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0')
         try:
+            data = received_packet[4:]
+            channel = struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0')
             username = addr_to_username[addr][0]
             addr_to_username[addr][1] = time.time()
 
@@ -195,7 +215,9 @@ def handle_client(conn, received_packet, addr):
                 send_message(conn, addr, ERROR, "Error: Channel does not exist.".ljust(64, '\0').encode('utf-8'))
         except KeyError:
                 send_message(conn, addr, ERROR, "Error: User not logged in.".ljust(64, '\0').encode('utf-8'))
-
+        except:
+            print("Received malformed packet.")
+            return
     elif(message_type == ALIVE_REQUEST):
         addr_to_username[addr][1] = time.time()
         print(f"{addr} sent a keep alive request.")

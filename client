@@ -40,44 +40,62 @@ def handle_server(received_packet):
     sys.stdout.flush()
 
     # Determine the type of message received
-    message_type = struct.unpack('!I', received_packet[:4])[0]
-    data = received_packet[4:]
+    try:
+        message_type = struct.unpack('!I', received_packet[:4])[0]
+        data = received_packet[4:]
+    except:
+        print("Received malformed packet.")
+        return 0
 
     sys.stdout.write('\b' * len(inp))
     sys.stdout.flush()
     
     if message_type == SAY:
-        channel = data[:32].decode('utf-8').rstrip('\0')
-        username = data[32:64].decode('utf-8').rstrip('\0')
-        message = data[64:128].decode('utf-8').rstrip('\0')
-        print(f"[{channel}][{username}]: {message}")
+        try:
+            channel = data[:32].decode('utf-8').rstrip('\0')
+            username = data[32:64].decode('utf-8').rstrip('\0')
+            message = data[64:128].decode('utf-8').rstrip('\0')
+            print(f"[{channel}][{username}]: {message}")
+        except:
+            print("Received malformed packet.")
 
     elif message_type == LIST:
-        count = int(struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0'))
-        print("Existing channels:")
-        offset = 32
-        for _ in range(count):
-            channel = struct.unpack('!32s', data[offset:offset + 32])[0].decode('utf-8').rstrip('\0')
-            offset += 32
-            if channel:
-                print(f"- {channel}")
+        try:
+            count = int(struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0'))
+            print("Existing channels:")
+            offset = 32
+            for _ in range(count):
+                channel = struct.unpack('!32s', data[offset:offset + 32])[0].decode('utf-8').rstrip('\0')
+                offset += 32
+                if channel:
+                    print(f"- {channel}")
+        except:
+            print("Received malformed packet.")
 
     elif message_type == WHO:
-        count = int(struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0'))
-        channel = struct.unpack('!32s', data[32:64])[0].decode('utf-8').rstrip('\0')
-        print(f"{count} users on channel {channel}:")
-        offset = 64
-        for _ in range(count):
-            user = struct.unpack('!32s', data[offset:offset + 32])[0].decode('utf-8')
-            offset += 32
-            if user:
-                print(f"- {user}")
+        try:
+            count = int(struct.unpack('!32s', data[:32])[0].decode('utf-8').rstrip('\0'))
+            channel = struct.unpack('!32s', data[32:64])[0].decode('utf-8').rstrip('\0')
+            print(f"{count} users on channel {channel}:")
+            offset = 64
+            for _ in range(count):
+                user = struct.unpack('!32s', data[offset:offset + 32])[0].decode('utf-8')
+                offset += 32
+                if user:
+                    print(f"- {user}")
+        except:
+            print("Received malformed packet.")
 
     elif message_type == ERROR:
-        message = data[:64].decode('utf-8').rstrip('\0')
-        print(message)
-        if(message in ["User logged out.",  "Error: Username already taken. Please reconnect with different."]):
-            return 1
+        try:
+            message = data[:64].decode('utf-8').rstrip('\0')
+            print(message)
+            if(message in ["User logged out.",  "Error: Username already taken. Please reconnect with different."]):
+                sys.stdout.write(f"{inp}")
+                sys.stdout.flush()
+                return 1
+        except:
+            print("Received malformed packet.")
 
     sys.stdout.write(f"{inp}")
     sys.stdout.flush()
