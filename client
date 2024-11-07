@@ -240,5 +240,6 @@ def main():
             termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
         except ValueError:
             print("Client input malfunctioned. Please reconnect. Username may no longer be available.")
+            exit(1)
 if __name__ == "__main__":
     main()
