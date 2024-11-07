@@ -58,7 +58,6 @@ def check_times(conn, addr):
                 send_message(conn, addr, ERROR, "User logged out.".ljust(64, '\0').encode('utf-8'))
 
 def handle_client(conn, received_packet, addr):
-    ip, port = addr[0], addr[1]
     print("New packet from", addr)
     if not received_packet:
         return
